@@ -1,0 +1,35 @@
+trigger:
+  - master  # Trigger the pipeline on changes to the 'master' branch
+
+pool:
+  name: 'self'  # Use the self-hosted agent pool (Windows)
+
+steps:
+  # Step 1: Run the Python script
+  - script: |
+      echo "Listing all files in the working directory:"
+      dir /s
+    displayName: 'List all files in the directory (Windows)'
+
+  - script: |
+      set RUN_FLASK=false
+      python model.py # Run the Logistic Regression part of the code
+    displayName: 'Run Logistic Regression, SVM, and Random Forest Regressor Models'
+
+  # Step 2: Log in to Azure Container Registry (ACR)
+  - task: Docker@2
+    inputs:
+      containerRegistry: 'MLProjectServiceConnection'  # Replace with your actual ACR service connection
+      command: 'login'
+    displayName: 'Log in to Azure Container Registry'
+
+  # Step 3: Build and push the Docker image to ACR with buildx
+  - script: |
+      echo "Creating and bootstrapping the Buildx builder instance..."
+      docker buildx create --name agitated_wilbur --use || echo "Using existing builder"
+      docker buildx inspect --bootstrap
+      echo "Building and pushing the Docker image..."
+      docker buildx build --platform linux/amd64,linux/arm64 -t mlproject.azurecr.io/ml_image:latest -f Dockerfile --push .
+    displayName: 'Build and push Docker image to ACR with buildx on Windows agent'
+    env:
+      DOCKER_BUILDKIT: 1
